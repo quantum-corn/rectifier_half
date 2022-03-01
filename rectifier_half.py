@@ -2,28 +2,38 @@
 # # Half Wave Rectifier
 # ## Let's draw the circuit first
 # For that I will use schemdraw
-# ### v1.0
+# ### v3.0
 
 # %% Draw
 import schemdraw
 schemdraw.use('svg')
 elm=schemdraw.elements
-d=schemdraw.Drawing(file='rectifier_half_ckt.svg')
+d=schemdraw.Drawing()
+d+=elm.Ground()
 d+=elm.SourceSin().reverse().up()
 d+=(dio:=elm.Diode()).right()
 d+=elm.Line(unit=1)
 d+=elm.Resistor().down().label('$R_L$', loc='bottom')
-d+=elm.Line(unit=1).left()
-d+=elm.Line()
-d+=elm.Ground()
 
-d.draw()
+# %% unfiltered
+uf=schemdraw.Drawing(file='rectifier_half_ckt.svg', backend='svg')
+uf+=elm.ElementDrawing(d)
+uf+=elm.Line(unit=4).left()
+uf.draw()
 
 # %% with capacitor filter
-f=schemdraw.Drawing(file='rectifier_half_flt_ckt.svg')
-f+=elm.ElementDrawing(d)
+f=schemdraw.Drawing(file='rectifier_half_c_ckt.svg', backend='svg')
+f+=elm.ElementDrawing(uf)
 f+=elm.Capacitor().down().at(dio.end)
 f.draw()
+
+# %% with inductor capacitor filter
+lf=schemdraw.Drawing(file='rectifier_half_lc_ckt.svg', backend='svg')
+lf+=elm.ElementDrawing(d)
+lf+=elm.Inductor(unit=1).left()
+lf+=elm.Line()
+lf+=elm.Capacitor().down().at(dio.end)
+lf.draw()
 
 # %% md
 # ## Now the simulation
@@ -37,23 +47,32 @@ from PySpice.Unit import *
 # %% setup
 logger = Logging.setup_logging()
 
-# %% circuit
-circuit = Circuit("Half Wave Rectifier")
-circuit.include('../model_library/diode.lib')
-source=circuit.SinusoidalVoltageSource('input', 'input', circuit.gnd, amplitude=5@u_V, frequency=50@u_Hz)
-circuit.D('', 'input', 'load', model='1N4148')
-circuit.R('', 'load', circuit.gnd, 100@u_Ohm)
+# %% ckt
+ckt = Circuit("Half Wave Rectifier")
+ckt.include('../model_library/diode.lib')
+source=ckt.SinusoidalVoltageSource('input', 'input', ckt.gnd, amplitude=5@u_V, frequency=50@u_Hz)
+ckt.D('', 'input', 'load', model='1N4148')
+ckt.R('l', 'load', ckt.gnd, 100@u_Ohm)
 
 # %% simulate
-simulator = circuit.simulator()
-analysis = simulator.transient(step_time=source.period/200, end_time=source.period*2)
+simulator = ckt.simulator()
+analysis = simulator.transient(step_time=source.period/200, end_time=source.period*5)
 
-# %% filter
-circuit.C('f', 'load', circuit.gnd, 1.25@u_mF)
+# %% c filter
+ckt.C('f', 'load', ckt.gnd, 1.25@u_mF)
 
-# %% simulate filter
-simulator = circuit.simulator()
-fanalysis = simulator.transient(step_time=source.period/200, end_time=source.period*2)
+# %% simulate c filter
+simulator = ckt.simulator()
+cfanalysis = simulator.transient(step_time=source.period/200, end_time=source.period*5)
+
+# %% lc filter
+ckt.Rl.detach()
+ckt.L('f', 'load', 'loadr', 1.25@u_H)
+ckt.R('', 'loadr', ckt.gnd, 100@u_Ohm)
+
+# %% simulate lc filter
+simulator = ckt.simulator()
+lcfanalysis = simulator.transient(step_time=source.period/200, end_time=source.period*5)
 
 # %% md
 # ### Now let's plot the data
@@ -70,7 +89,8 @@ ax.axhline(y=0, color='black')
 ax.axvline(x=0, color='black')
 ax.plot(analysis.input, label='input')
 ax.plot(analysis.load, label='unfiltered output')
-ax.plot(fanalysis.load, label='filtered output')
+ax.plot(cfanalysis.load, label='C filtered output')
+ax.plot(lcfanalysis.loadr, label='LC filtered output')
 plt.legend()
 plt.show()
 plt.savefig('rectifier_half_plt.svg')
